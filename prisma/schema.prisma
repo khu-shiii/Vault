@@ -1,0 +1,137 @@
+// Prisma schema for Vault - Cryptographic Document Attestation Platform
+// Target: PostgreSQL (Neon.tech / Supabase Free Tier)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  SIGNER
+  VIEWER
+  PUBLIC_VERIFIER
+}
+
+enum ActionType {
+  UPLOAD
+  VIEW
+  SIGN
+  PERMISSION_UPDATE
+}
+
+model Organization {
+  id        String     @id @default(uuid())
+  name      String
+  createdAt DateTime   @default(now()) @map("created_at")
+  users     User[]
+  documents Document[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String         @id @default(uuid())
+  organizationId String         @map("organization_id")
+  email          String         @unique
+  passwordHash   String         @map("password_hash")
+  role           Role           @default(VIEWER)
+  createdAt      DateTime       @default(now()) @map("created_at")
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  refreshTokens  RefreshToken[]
+  auditActions   AuditLogEntry[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
+  @@map("refresh_tokens")
+}
+
+model Document {
+  id                   String                @id @default(uuid())
+  organizationId       String                @map("organization_id")
+  title                String
+  fileHash             String                @map("file_hash")
+  merkleRoot           String                @map("merkle_root")
+  fileSize             Int                   @map("file_size")
+  chunkOffset BigInt  @default(0)            @map("chunk_offset")
+  mimeType             String                @default("application/octet-stream") @map("mime_type")
+  metadata             Json                  @default("{}") @map("metadata")
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  merkleBlocks         MerkleBlock[]
+  auditLogEntries      AuditLogEntry[]
+  verificationAttempts VerificationAttempt[]
+
+  @@index([fileHash], name: "idx_documents_file_hash")
+  @@index([merkleRoot], name: "idx_documents_merkle_root")
+  @@index([organizationId], name: "idx_documents_org_id")
+  @@map("documents")
+}
+
+model MerkleBlock {
+  id         String   @id @default(uuid())
+  documentId String   @map("document_id")
+  blockIndex Int      @map("block_index")
+  blockHash  String   @map("block_hash")
+  parentHash String?  @map("parent_hash")
+  chunkSize  Int      @default(262144) @map("chunk_size") // 256 KB
+  chunkOffset Int     @default(0) @map("chunk_offset")
+
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, blockIndex], name: "uq_doc_block_idx")
+  @@index([documentId], name: "idx_merkle_blocks_doc_id")
+  @@map("merkle_blocks")
+}
+
+model AuditLogEntry {
+  id           String     @id @default(uuid())
+  documentId   String     @map("document_id")
+  seq          Int
+  actionType   ActionType @map("action_type")
+  actorId      String?    @map("actor_id")
+  timestamp    DateTime   @default(now()) @map("timestamp")
+  payloadData  Json       @default("{}") @map("payload_data")
+  previousHash String     @map("previous_hash")
+  currentHash  String     @map("current_hash")
+
+  document     Document   @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  actor        User?      @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@unique([documentId, seq], name: "uq_audit_doc_seq")
+  @@index([actorId], name: "idx_audit_actor_id")
+  @@map("audit_log_entries")
+}
+
+model VerificationAttempt {
+  id           String   @id @default(uuid())
+  documentId   String?  @map("document_id")
+  isAuthentic  Boolean  @map("is_authentic")
+  fileHash     String   @map("file_hash")
+  merkleRoot   String   @map("merkle_root")
+  verifiedAt   DateTime @default(now()) @map("verified_at")
+  ipAddressHash String? @map("ip_address_hash")
+
+  document     Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@index([fileHash], name: "idx_verifications_file_hash")
+  @@index([merkleRoot], name: "idx_verifications_merkle_root")
+  @@map("verification_attempts")
+}
