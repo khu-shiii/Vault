@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Vault - Cryptographic Document Attestation",
-  description: "End-to-end cryptographic document attestation and tamper-proof verification platform.",
+  description: "Document attestation and verification.",
 };
 
 export default function RootLayout({

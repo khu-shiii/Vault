@@ -68,7 +68,7 @@ model Document {
   fileHash             String                @map("file_hash")
   merkleRoot           String                @map("merkle_root")
   fileSize             Int                   @map("file_size")
-  chunkOffset BigInt  @default(0)            @map("chunk_offset")
+  
   mimeType             String                @default("application/octet-stream") @map("mime_type")
   metadata             Json                  @default("{}") @map("metadata")
   createdAt            DateTime              @default(now()) @map("created_at")
