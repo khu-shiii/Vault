@@ -1,6 +1,8 @@
 // Browser fetch wrapper: unwraps { success, data }, refreshes the session once on 401.
 let refreshing: Promise<boolean> | null = null;
-const refreshSession = () =>
+
+/** Single-flight: concurrent callers share one /refresh request (rotation would otherwise reject the second). */
+export const refreshSession = () =>
   (refreshing ??= fetch("/api/auth/refresh", { method: "POST" })
     .then((r) => r.ok)
     .finally(() => {

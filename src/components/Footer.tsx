@@ -13,7 +13,7 @@ export function Footer() {
               <span>VAULT ATTESTATION ENGINE</span>
             </div>
             <p className="text-slate-400 text-xs leading-relaxed max-w-md">
-              Enterprise cryptographic document verification platform. Protects sensitive contracts, certifications, and digital assets using SHA-256 Merkle trees and immutable hash-chained audit sequences.
+              Enterprise cryptographic document verification platform. Protects sensitive contracts, certifications, and digital assets using SHA-256 Merkle trees and tamper-evident hash-chained audit sequences.
             </p>
             <div className="flex flex-wrap items-center gap-3 pt-2">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-800 text-slate-300 text-xs border border-slate-700">
@@ -72,10 +72,7 @@ export function Footer() {
         <div className="pt-6 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-4">
           <p>© {new Date().getFullYear()} Vault Cryptographic Attestation. Enterprise Grade Security.</p>
           <div className="flex items-center gap-4">
-            <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              Cryptographic Hash Integrity Online
-            </span>
+<span className="text-slate-500">SHA-256 · Merkle trees · hash-chained audit log</span>
           </div>
         </div>
       </div>

@@ -1,0 +1,163 @@
+{
+  "info": {
+    "name": "Vault /v1 API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      { "key": "key", "value": "x-api-key", "type": "string" },
+      { "key": "value", "value": "{{apiKey}}", "type": "string" },
+      { "key": "in", "value": "header", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "apiKey", "value": "vk_7e8b76d461a92f00c3f2aa3e22a7f6078a940f2fdcfab933" },
+    { "key": "customerId", "value": "" },
+    { "key": "eventId", "value": "" },
+    { "key": "decisionId", "value": "" },
+    { "key": "actionId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. identify customer (consent granted)",
+      "event": [
+        { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('customerId', 'cust_pm_' + Date.now());"] } },
+        { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 with customerId', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().customerId).to.be.a('string'); });"] } }
+      ],
+      "request": {
+        "method": "POST", "url": "{{baseUrl}}/v1/identify", "header": [],
+        "body": { "mode": "raw", "raw": "{\"externalCustomerId\":\"{{customerId}}\",\"traits\":{\"phone\":\"+15550293841\",\"email\":\"pm@example.test\",\"consent\":{\"whatsapp\":true,\"email\":true,\"call\":true}}}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "2. events/batch: accepted",
+      "event": [
+        { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('eventId', 'pm-evt-' + Date.now());"] } },
+        { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('202 and accepted', function () { pm.response.to.have.status(202); var j = pm.response.json(); pm.expect(j.accepted).to.include(pm.collectionVariables.get('eventId')); pm.expect(j.duplicates).to.eql([]); pm.expect(j.rejected).to.eql([]); });"] } }
+      ],
+      "request": {
+        "method": "POST", "url": "{{baseUrl}}/v1/events/batch", "header": [],
+        "body": { "mode": "raw", "raw": "{\"events\":[{\"eventId\":\"{{eventId}}\",\"externalCustomerId\":\"{{customerId}}\",\"eventName\":\"payment_failed\",\"occurredAt\":\"2026-11-20T10:00:00Z\",\"source\":\"postman\",\"schemaVersion\":1,\"properties\":{\"documentTitle\":\"Mutual_NDA_v2.pdf\",\"attemptCount\":2}}]}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "3. events/batch: same eventId is a duplicate",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('202 and duplicate', function () { pm.response.to.have.status(202); var j = pm.response.json(); pm.expect(j.duplicates).to.include(pm.collectionVariables.get('eventId')); pm.expect(j.accepted).to.eql([]); });"] } }
+      ],
+      "request": {
+        "method": "POST", "url": "{{baseUrl}}/v1/events/batch", "header": [],
+        "body": { "mode": "raw", "raw": "{\"events\":[{\"eventId\":\"{{eventId}}\",\"externalCustomerId\":\"{{customerId}}\",\"eventName\":\"payment_failed\",\"occurredAt\":\"2026-11-20T10:00:00Z\",\"source\":\"postman\",\"schemaVersion\":1,\"properties\":{}}]}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "4. BLOCKED events/batch: unsupported schemaVersion is rejected",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('rejected list has one id', function () { pm.response.to.have.status(202); pm.expect(pm.response.json().rejected.length).to.eql(1); });"] } }
+      ],
+      "request": {
+        "method": "POST", "url": "{{baseUrl}}/v1/events/batch", "header": [],
+        "body": { "mode": "raw", "raw": "{\"events\":[{\"eventId\":\"pm-bad-1\",\"externalCustomerId\":\"{{customerId}}\",\"eventName\":\"payment_failed\",\"occurredAt\":\"2026-11-20T10:00:00Z\",\"source\":\"postman\",\"schemaVersion\":2}]}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "5. BLOCKED events/batch: no API key",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('401', function () { pm.response.to.have.status(401); });"] } }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST", "url": "{{baseUrl}}/v1/events/batch", "header": [],
+        "body": { "mode": "raw", "raw": "{\"events\":[]}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "6. decisions/evaluate",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": ["var j = pm.response.json();", "pm.test('decision with 3 fallback steps', function () { pm.expect([200, 201]).to.include(pm.response.code); pm.expect(j.intent).to.eql('payment_failed'); pm.expect(j.steps.length).to.eql(3); });", "pm.collectionVariables.set('decisionId', j.id);"] } }
+      ],
+      "request": {
+        "method": "POST", "url": "{{baseUrl}}/v1/decisions/evaluate", "header": [],
+        "body": { "mode": "raw", "raw": "{\"externalCustomerId\":\"{{customerId}}\"}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "7. decisions/:id/dispatch (first step only, mock)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": ["var j = pm.response.json();", "pm.test('202, step 1 accepted, rest queued, all mock', function () { pm.response.to.have.status(202); pm.expect(j.actions.map(function (a) { return a.status; })).to.eql(['accepted', 'queued', 'queued']); pm.expect(j.actions.every(function (a) { return a.mock === true; })).to.eql(true); });", "pm.collectionVariables.set('actionId', j.actions[0].actionId);"] } }
+      ],
+      "request": { "method": "POST", "url": "{{baseUrl}}/v1/decisions/{{decisionId}}/dispatch", "header": [], "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } } }
+    },
+    {
+      "name": "8. dispatch again is idempotent",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('same 3 actions, none duplicated', function () { var j = pm.response.json(); pm.expect(j.actions.length).to.eql(3); pm.expect(j.actions[0].actionId).to.eql(pm.collectionVariables.get('actionId')); });"] } }
+      ],
+      "request": { "method": "POST", "url": "{{baseUrl}}/v1/decisions/{{decisionId}}/dispatch", "header": [], "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } } }
+    },
+    {
+      "name": "9. interaction: WhatsApp delivery failed",
+      "event": [
+        { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('interactionId', 'pm-int-' + Date.now());"] } },
+        { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('action marked failed', function () { pm.response.to.have.status(202); pm.expect(pm.response.json().actionStatus).to.eql('failed'); });"] } }
+      ],
+      "request": {
+        "method": "POST", "url": "{{baseUrl}}/v1/interaction-events", "header": [],
+        "body": { "mode": "raw", "raw": "{\"externalCustomerId\":\"{{customerId}}\",\"type\":\"delivery_status\",\"channel\":\"whatsapp\",\"actionId\":\"{{actionId}}\",\"status\":\"failed\",\"interactionId\":\"{{interactionId}}\"}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "10. decision now shows the email fallback sent",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('failed, accepted, queued', function () { var s = pm.response.json().actions.map(function (a) { return a.status; }); pm.expect(s).to.eql(['failed', 'accepted', 'queued']); });"] } }
+      ],
+      "request": { "method": "GET", "url": "{{baseUrl}}/v1/decisions/{{decisionId}}", "header": [] }
+    },
+    {
+      "name": "11. actions/:id",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('failed and labelled mock', function () { var j = pm.response.json(); pm.expect(j.status).to.eql('failed'); pm.expect(j.mock).to.eql(true); });"] } }
+      ],
+      "request": { "method": "GET", "url": "{{baseUrl}}/v1/actions/{{actionId}}", "header": [] }
+    },
+    {
+      "name": "12. customers/:id/timeline (both origins)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('sdk_client and synthetic_simulation present', function () { var o = pm.response.json().items.map(function (i) { return i.origin; }); pm.expect(o).to.include('sdk_client'); pm.expect(o).to.include('synthetic_simulation'); });"] } }
+      ],
+      "request": { "method": "GET", "url": "{{baseUrl}}/v1/customers/{{customerId}}/timeline", "header": [] }
+    },
+    {
+      "name": "13. mock/actions: valid request",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('202 with mock true', function () { pm.response.to.have.status(202); pm.expect(pm.response.json()).to.eql({ actionId: 'pm-a1', status: 'accepted', mock: true }); });"] } }
+      ],
+      "request": {
+        "method": "POST", "url": "{{baseUrl}}/v1/mock/actions", "header": [],
+        "body": { "mode": "raw", "raw": "{\"actionId\":\"pm-a1\",\"decisionId\":\"pm-d1\",\"externalCustomerId\":\"{{customerId}}\",\"channel\":\"whatsapp\",\"purpose\":\"signature_recovery\",\"action\":\"send_message\",\"recipient\":{\"phone\":\"+15550293841\"},\"content\":{\"type\":\"template\",\"templateKey\":\"signature_reauth_help\",\"parameters\":{\"documentTitle\":\"Mutual_NDA_v2.pdf\"}},\"reasonCodes\":[\"SIGNATURE_FAILED\"],\"idempotencyKey\":\"pm-d1:whatsapp:1\"}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "14. BLOCKED mock/actions: invalid channel",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('400', function () { pm.response.to.have.status(400); });"] } }
+      ],
+      "request": {
+        "method": "POST", "url": "{{baseUrl}}/v1/mock/actions", "header": [],
+        "body": { "mode": "raw", "raw": "{\"actionId\":\"pm-a2\",\"decisionId\":\"pm-d1\",\"externalCustomerId\":\"x\",\"channel\":\"sms\",\"purpose\":\"p\",\"action\":\"send_message\",\"recipient\":{\"phone\":\"+15550293841\"},\"content\":{\"type\":\"template\",\"templateKey\":\"t\",\"parameters\":{}},\"reasonCodes\":[],\"idempotencyKey\":\"k\"}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "15. BLOCKED decisions/evaluate: unknown customer",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('404', function () { pm.response.to.have.status(404); });"] } }
+      ],
+      "request": {
+        "method": "POST", "url": "{{baseUrl}}/v1/decisions/evaluate", "header": [],
+        "body": { "mode": "raw", "raw": "{\"externalCustomerId\":\"does-not-exist\"}", "options": { "raw": { "language": "json" } } }
+      }
+    }
+  ]
+}

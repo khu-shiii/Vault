@@ -15,6 +15,7 @@ export const POST = handle(async (req) => {
   const user = await db.user.findUnique({ where: { email } });
   const valid = await verifyPassword(user?.passwordHash ?? null, password);
   if (!user || !valid) throw new ApiError(401, "INVALID_CREDENTIALS", "Invalid email or password");
+  if (user.disabledAt) throw new ApiError(403, "ACCOUNT_DISABLED", "This account has been disabled");
 
   const { access, refresh } = await startSession(user);
   const res = ok({ user: { id: user.id, email: user.email, role: user.role, organizationId: user.organizationId } });

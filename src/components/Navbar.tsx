@@ -26,6 +26,8 @@ export function Navbar({ user: propUser, onLogout: propLogout }: NavbarProps) {
     { href: "/", label: "Overview" },
     { href: "/dashboard", label: "Document Ledger" },
     { href: "/verify", label: "Verify File" },
+    ...(currentUser?.role === "ADMIN" ? [{ href: "/admin/users", label: "Users" }] : []),
+    ...(currentUser ? [{ href: "/operator", label: "Operator" }] : []),
   ];
 
   const isActive = (path: string) => {
@@ -49,10 +51,7 @@ export function Navbar({ user: propUser, onLogout: propLogout }: NavbarProps) {
               <div className="flex flex-col">
                 <span className="font-bold tracking-wider text-base text-white flex items-center gap-1.5">
                   VAULT
-                  <span
-                    className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 ring-2 ring-emerald-950 animate-pulse"
-                    title="System Active"
-                  />
+                  
                 </span>
                 <span className="text-[10px] tracking-widest text-slate-400 uppercase font-medium">
                   Cryptographic Attestation

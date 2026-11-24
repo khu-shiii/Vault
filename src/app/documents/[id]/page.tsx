@@ -8,6 +8,8 @@ import { Footer } from "@/components/Footer";
 import { CopyButton } from "@/components/CopyButton";
 import { Badge, ActionBadge } from "@/components/Badge";
 import { CardSkeleton } from "@/components/LoadingSkeleton";
+import { formatFileSize } from "@/lib/format";
+import { AnchorPanel } from "@/components/AnchorPanel";
 import {
   ArrowLeftIcon,
   ShieldCheckIcon,
@@ -61,11 +63,6 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
       .catch((e) => setError((e as Error).message));
   }, [params.id]);
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-  };
 
   if (error) {
     return (
@@ -280,8 +277,8 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
               <p className="text-lg font-bold text-slate-900 mt-0.5">{formatFileSize(d.fileSize)}</p>
             </div>
             <div className="border-r border-slate-100 last:border-none">
-              <p className="text-xs text-slate-500 font-medium">Persisted File Bytes</p>
-              <p className="text-lg font-bold text-emerald-600 mt-0.5">0 Bytes (RAM only)</p>
+              <p className="text-xs text-slate-500 font-medium">Stored File Content</p>
+              <p className="text-lg font-bold text-emerald-600 mt-0.5">None (hashes only)</p>
             </div>
             <div>
               <p className="text-xs text-slate-500 font-medium">Audit Events</p>
@@ -290,13 +287,14 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
           </div>
         </section>
 
+        <AnchorPanel documentId={d.id} />
         {/* Immutable Hash-Chained Audit Trail Section */}
         <section className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden space-y-4 p-4 sm:p-6">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <LinkIcon className="w-5 h-5 text-blue-600" />
               <h2 className="text-lg font-bold text-slate-900">
-                Immutable Audit Log Sequence ({auditLog.length})
+                Hash-Chained Audit Log({auditLog.length})
               </h2>
             </div>
             <p className="text-xs text-slate-500">

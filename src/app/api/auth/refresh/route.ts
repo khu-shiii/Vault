@@ -25,7 +25,7 @@ export const POST = handle(async (req) => {
     data: { revokedAt: new Date() },
   });
   const user = count === 1 ? await db.user.findUnique({ where: { id: stored.userId } }) : null;
-  if (!user) throw invalid();
+  if (!user || user.disabledAt) throw invalid();
 
   const { access, refresh } = await startSession(user);
   const res = ok({ user: { id: user.id, email: user.email, role: user.role, organizationId: user.organizationId } });

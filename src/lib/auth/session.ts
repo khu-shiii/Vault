@@ -3,6 +3,7 @@ import { ApiError } from "../api";
 import { db } from "../db";
 import { sha256 } from "../crypto/merkle";
 import type { JwtPayload, Role } from "../types";
+import { can, type Permission } from "./permissions";
 import { accessTtlMs, refreshTtlMs, signAccessToken, signRefreshToken, verifyAccessToken } from "./tokens";
 
 export const ACCESS_COOKIE = "vault_access";
@@ -46,4 +47,20 @@ export async function requireAuth(req: Request, roles?: Role[]): Promise<JwtPayl
   if (!user) throw new ApiError(401, "UNAUTHORIZED", "Authentication required");
   if (roles && !roles.includes(user.role)) throw new ApiError(403, "FORBIDDEN", "Insufficient permissions");
   return user;
+}
+
+/**
+ * Permission guard. Privileged permissions re-read the user from the DB so a demoted or
+ * disabled admin loses access immediately instead of when their access token expires.
+ */
+export async function requirePermission(req: Request, permission: Permission): Promise<JwtPayload> {
+  const user = await requireAuth(req);
+  let role = user.role;
+  if (permission === "user:manage") {
+    const row = await db.user.findUnique({ where: { id: user.userId }, select: { role: true, disabledAt: true } });
+    if (!row || row.disabledAt) throw new ApiError(401, "UNAUTHORIZED", "Authentication required");
+    role = row.role;
+  }
+  if (!can(role, permission)) throw new ApiError(403, "FORBIDDEN", "Insufficient permissions");
+  return { ...user, role };
 }

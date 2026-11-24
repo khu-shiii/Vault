@@ -7,6 +7,8 @@ import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { CopyButton } from "@/components/CopyButton";
 import { Badge } from "@/components/Badge";
+import { formatFileSize } from "@/lib/format";
+import { verifyInBrowser } from "@/lib/verify-client";
 import {
   ShieldCheckIcon,
   ShieldAlertIcon,
@@ -61,12 +63,6 @@ function VerifyForm() {
     }
   }
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-  };
-
   async function verify() {
     if (!file) return;
     setBusy(true);
@@ -74,14 +70,7 @@ function VerifyForm() {
     setResult(null);
 
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      if (documentId.trim()) fd.append("documentId", documentId.trim());
-
-      const res = await fetch("/api/verify", { method: "POST", body: fd });
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error?.message ?? "Verification failed");
-      setResult(json.data);
+      setResult(await verifyInBrowser(file, documentId));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -424,7 +413,7 @@ export default function VerifyPage() {
 
           <div className="inline-flex items-center gap-1.5 text-xs text-slate-500 pt-1">
             <LockIcon className="w-3.5 h-3.5 text-slate-400" />
-            <span>Zero-Knowledge: Files are processed in RAM and never stored.</span>
+            <span>Privacy: your file is hashed in your browser. Only its hashes are sent to the server and the file never leaves your device.</span>
           </div>
         </div>
 

@@ -87,7 +87,7 @@ export default function HomePage() {
               Engineered for Auditability, Privacy & Proof
             </h3>
             <p className="text-slate-600 text-sm sm:text-base">
-              Traditional attestation systems store sensitive documents in centralized databases. Vault verifies authenticity mathematically while upholding zero-knowledge privacy.
+              Traditional attestation systems store sensitive documents in centralized databases. Vault verifies authenticity mathematically while recording only hashes, never the documents themselves.
             </p>
           </div>
 
@@ -113,7 +113,7 @@ export default function HomePage() {
                 <li className="flex items-center gap-2">
                   <CheckIcon className="w-4 h-4 text-emerald-600 flex-shrink-0" />
                   Independent leaf hash validation
-                </li>
+                </li>tamper-evident hash-chained audit trails. Pinpoint byte-level changes in seconds. Vault records only hashes, never your file contents.
               </ul>
             </div>
 
@@ -137,7 +137,7 @@ export default function HomePage() {
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckIcon className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                  Immutable append-only sequences
+                  Append-only, hash-linked sequences
                 </li>
               </ul>
             </div>

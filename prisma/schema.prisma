@@ -25,28 +25,37 @@ enum ActionType {
 }
 
 model Organization {
-  id        String     @id @default(uuid())
-  name      String
-  createdAt DateTime   @default(now()) @map("created_at")
-  users     User[]
-  documents Document[]
+  id             String          @id @default(uuid())
+  name           String
+  createdAt      DateTime        @default(now()) @map("created_at")
+  eventMappings  Json            @default("{}") @map("event_mappings")
+  users          User[]
+  documents      Document[]
+  securityEvents SecurityEvent[]
+  apiKeys        ApiKey[]
+  customers      Customer[]
 
   @@map("organizations")
 }
 
+
 model User {
-  id             String         @id @default(uuid())
-  organizationId String         @map("organization_id")
-  email          String         @unique
-  passwordHash   String         @map("password_hash")
-  role           Role           @default(VIEWER)
-  createdAt      DateTime       @default(now()) @map("created_at")
-  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id             String          @id @default(uuid())
+  organizationId String          @map("organization_id")
+  email          String          @unique
+  passwordHash   String          @map("password_hash")
+  role           Role            @default(VIEWER)
+  createdAt      DateTime        @default(now()) @map("created_at")
+  disabledAt     DateTime?       @map("disabled_at")
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   refreshTokens  RefreshToken[]
   auditActions   AuditLogEntry[]
+  securityActed  SecurityEvent[] @relation("SecurityActor")
+  securityTarget SecurityEvent[] @relation("SecurityTarget")
 
   @@map("users")
 }
+
 
 model RefreshToken {
   id        String    @id @default(uuid())
@@ -134,4 +143,153 @@ model VerificationAttempt {
   @@index([fileHash], name: "idx_verifications_file_hash")
   @@index([merkleRoot], name: "idx_verifications_merkle_root")
   @@map("verification_attempts")
+}
+
+// Admin/security operations (user management). Plain log, not hash-chained.
+model SecurityEvent {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  actorId        String?  @map("actor_id")
+  targetUserId   String?  @map("target_user_id")
+  action         String
+  details        Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor          User?        @relation("SecurityActor", fields: [actorId], references: [id], onDelete: SetNull)
+  target         User?        @relation("SecurityTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt], name: "idx_security_events_org_created")
+  @@map("security_events")
+}
+
+model ApiKey {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  label          String
+  prefix         String
+  keyHash        String       @unique @map("key_hash")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  revokedAt      DateTime?    @map("revoked_at")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+model Customer {
+  id                 String              @id @default(uuid())
+  organizationId     String              @map("organization_id")
+  externalCustomerId String              @map("external_customer_id")
+  phone              String?
+  email              String?
+  consent            Json                @default("{}")
+  quietHours         Json?               @map("quiet_hours")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  anonymousIds       AnonymousIdentity[]
+  sdkEvents          SdkEvent[]
+  interactions       InteractionEvent[]
+  decisions          Decision[]
+
+  @@unique([organizationId, externalCustomerId], map: "uq_customers_org_ext")
+  @@map("customers")
+}
+
+model AnonymousIdentity {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  anonymousId    String   @map("anonymous_id")
+  customerId     String   @map("customer_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  customer       Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, anonymousId], map: "uq_anon_org_anon")
+  @@map("anonymous_identities")
+}
+
+model SdkEvent {
+  id                 String    @id @default(uuid())
+  organizationId     String    @map("organization_id")
+  eventId            String    @map("event_id")
+  customerId         String?   @map("customer_id")
+  externalCustomerId String?   @map("external_customer_id")
+  anonymousId        String?   @map("anonymous_id")
+  eventName          String    @map("event_name")
+  occurredAt         DateTime  @map("occurred_at")
+  source             String
+  schemaVersion      Int       @map("schema_version")
+  properties         Json      @default("{}")
+  receivedAt         DateTime  @default(now()) @map("received_at")
+  customer           Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, eventId], map: "uq_sdk_events_org_event")
+  @@index([organizationId, customerId, occurredAt], map: "idx_sdk_events_customer_time")
+  @@index([organizationId, anonymousId], map: "idx_sdk_events_anon")
+  @@map("sdk_events")
+}
+
+model InteractionEvent {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  interactionId  String?  @map("interaction_id")
+  customerId     String   @map("customer_id")
+  type           String
+  channel        String?
+  actionId       String?  @map("action_id")
+  status         String?
+  payload        Json     @default("{}")
+  occurredAt     DateTime @map("occurred_at")
+  receivedAt     DateTime @default(now()) @map("received_at")
+  customer       Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, interactionId], map: "uq_interactions_org_id")
+  @@index([organizationId, customerId, occurredAt], map: "idx_interactions_customer_time")
+  @@map("interaction_events")
+}
+
+model Decision {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  customerId       String   @map("customer_id")
+  triggerEventId   String   @map("trigger_event_id")
+  triggerEventName String   @map("trigger_event_name")
+  intent           String
+  purpose          String
+  priority         Int
+  halted           Boolean  @default(false)
+  plan             Json
+  excluded         Json
+  gates            Json
+  evidence         Json
+  createdAt        DateTime @default(now()) @map("created_at")
+  customer         Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  actions          Action[]
+
+  @@unique([organizationId, triggerEventId], map: "uq_decisions_org_trigger")
+  @@index([organizationId, customerId], map: "idx_decisions_customer")
+  @@map("decisions")
+}
+
+model Action {
+  id             String    @id @default(uuid())
+  organizationId String    @map("organization_id")
+  decisionId     String    @map("decision_id")
+  step           Int
+  channel        String
+  purpose        String
+  action         String
+  status         String
+  dependsOnStep  Int?      @map("depends_on_step")
+  notBefore      DateTime? @map("not_before")
+  payload        Json
+  attempts       Int       @default(0)
+  lastError      String?   @map("last_error")
+  mock           Boolean   @default(true)
+  idempotencyKey String    @unique @map("idempotency_key")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  decision       Decision  @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+
+  @@index([decisionId, step], map: "idx_actions_decision_step")
+  @@map("actions")
 }

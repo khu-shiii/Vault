@@ -1,14 +1,14 @@
 import { ApiError, handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
 import { appendAudit } from "@/lib/audit/append";
-import { requireAuth } from "@/lib/auth/session";
+import { requirePermission } from "@/lib/auth/session";
 import { verifyAuditChain } from "@/lib/crypto/hash-chain";
 import type { AuditLogEntryData } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export const GET = handle(async (req, { params }) => {
-  const user = await requireAuth(req, ["ADMIN", "SIGNER", "VIEWER"]);
+  const user = await requirePermission(req, "document:read");
 
   const doc = await db.document.findFirst({
     where: { id: params.id, organizationId: user.organizationId }, // tenant isolation

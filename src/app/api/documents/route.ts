@@ -1,13 +1,13 @@
 import { handle, ok, readFileUpload } from "@/lib/api";
 import { db } from "@/lib/db";
 import { appendAudit } from "@/lib/audit/append";
-import { requireAuth } from "@/lib/auth/session";
+import { requirePermission } from "@/lib/auth/session";
 import { buildMerkleTree, chunkBuffer, sha256 } from "@/lib/crypto/merkle";
 
 export const dynamic = "force-dynamic";
 
 export const GET = handle(async (req) => {
-  const user = await requireAuth(req, ["ADMIN", "SIGNER", "VIEWER"]);
+  const user = await requirePermission(req, "document:read");
   const documents = await db.document.findMany({
     where: { organizationId: user.organizationId },
     orderBy: { createdAt: "desc" },
@@ -19,7 +19,7 @@ export const GET = handle(async (req) => {
 
 // Only hashes are stored. The uploaded bytes are discarded after hashing.
 export const POST = handle(async (req) => {
-  const user = await requireAuth(req, ["ADMIN", "SIGNER"]);
+  const user = await requirePermission(req, "document:upload");
   const { form, name, type, buf } = await readFileUpload(req);
 
   const title = (String(form.get("title") ?? "").trim() || name || "untitled").slice(0, 255);

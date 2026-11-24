@@ -63,7 +63,7 @@ export default function LoginPage() {
               Sign In to Vault
             </h1>
             <p className="text-sm text-slate-500">
-              Access the immutable attestation ledger and Merkle proofs.
+              Access the tamper-evident attestation ledger and Merkle proofs.
             </p>
           </div>
 

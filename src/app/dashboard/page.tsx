@@ -10,6 +10,8 @@ import { CopyButton } from "@/components/CopyButton";
 import { TableSkeleton } from "@/components/LoadingSkeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { Badge, RoleBadge } from "@/components/Badge";
+import { useAuth } from "@/context/AuthContext"; 
+import { formatFileSize } from "@/lib/format";
 import {
   FileTextIcon,
   UploadCloudIcon,
@@ -34,14 +36,10 @@ interface Doc {
   fileHash?: string;
 }
 
-interface Me {
-  email: string;
-  role: string;
-}
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [user, setUser] = useState<Me | null>(null);
+  const { user } = useAuth();
   const [docs, setDocs] = useState<Doc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -61,11 +59,7 @@ export default function DashboardPage() {
     try {
       setLoading(true);
       setError("");
-      const [meRes, docsRes] = await Promise.all([
-        api<{ user: Me }>("/api/auth/me"),
-        api<{ documents: Doc[] }>("/api/documents"),
-      ]);
-      setUser(meRes.user);
+      const docsRes = await api<{ documents: Doc[] }>("/api/documents");
       setDocs(docsRes.documents);
     } catch (e) {
       setError((e as Error).message);
@@ -107,16 +101,6 @@ export default function DashboardPage() {
     }
   }
 
-  async function logout() {
-    await api("/api/auth/logout", { method: "POST" }).catch(() => {});
-    router.push("/login");
-  }
-
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-  };
 
   const filteredDocs = docs.filter((d) => {
     if (!searchQuery.trim()) return true;
@@ -130,7 +114,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
-      <Navbar user={user} onLogout={logout} />
+      <Navbar />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 space-y-8">
         {/* Page Header */}
@@ -364,7 +348,7 @@ export default function DashboardPage() {
               <p className="text-xs text-slate-500 flex items-center gap-1.5 pt-1">
                 <LockIcon className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                 <span>
-                  <strong>Security Guarantee:</strong> File bytes are partitioned in RAM, hashed to generate Merkle leaves, and immediately discarded.
+                  <strong>Privacy:</strong> File bytes are partitioned in RAM, hashed to generate Merkle leaves, and immediately discarded.
                 </span>
               </p>
             </form>
@@ -413,7 +397,7 @@ export default function DashboardPage() {
               description={
                 searchQuery
                   ? "No registered records matched your query. Try a different search term."
-                  : "Upload a document above to generate its SHA-256 Merkle tree and immutable hash-chained audit record."
+                  : "Upload a document above to generate its SHA-256 Merkle tree and tamper-evident hash-chained audit record."
               }
               action={
                 searchQuery ? (
