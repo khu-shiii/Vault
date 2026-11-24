@@ -14,7 +14,7 @@ interface EventRow {
   actorEmail: string | null; targetEmail: string | null;
 }
 
-const ROLES = ["ADMIN", "SIGNER", "VIEWER"];
+const ROLES = ["SIGNER", "VIEWER"];
 const field = "w-full p-2 rounded-lg border border-slate-300 bg-white text-sm";
 const btn = "px-3 py-1.5 min-h-[36px] text-xs font-semibold rounded-md border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50";
 

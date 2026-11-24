@@ -9,7 +9,7 @@ export const refreshSession = () =>
       refreshing = null;
     }));
 
-const AUTHLESS = ["/api/auth/login", "/api/auth/refresh", "/api/auth/logout"];
+const AUTHLESS = ["/api/auth/login", "/api/auth/register", "/api/auth/refresh", "/api/auth/logout"];
 
 export async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
   let res = await fetch(path, init);

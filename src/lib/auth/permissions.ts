@@ -16,4 +16,4 @@ const MATRIX: Record<Role, Permission[]> = {
 export const can = (role: Role, permission: Permission): boolean => MATRIX[role]?.includes(permission) ?? false;
 
 /** Roles an admin may hand out. */
-export const ASSIGNABLE_ROLES: Role[] = ["ADMIN", "SIGNER", "VIEWER"];
+export const ASSIGNABLE_ROLES: Role[] = ["SIGNER", "VIEWER"];

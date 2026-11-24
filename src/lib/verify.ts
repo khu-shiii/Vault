@@ -1,3 +1,4 @@
+import { findSupersededVersion } from "./versioning";
 import { ApiError } from "./api";
 import { db } from "./db";
 import { hashNode, sha256 } from "./crypto/merkle";
@@ -63,7 +64,8 @@ export async function verifyHashes(input: { fileHash: string; leaves: string[]; 
     where: { merkleRoot, fileHash: input.fileHash },
     select: { id: true, title: true, createdAt: true },
   });
-  const closest = match ? null : await locateTampering(input.leaves, input.documentId);
+  const old = match ? null : await findSupersededVersion(merkleRoot);
+  const closest = match || old ? null : await locateTampering(input.leaves, input.documentId);
 
   await db.verificationAttempt.create({
     data: {
@@ -71,10 +73,29 @@ export async function verifyHashes(input: { fileHash: string; leaves: string[]; 
       isAuthentic: !!match,
       fileHash: input.fileHash,
       merkleRoot,
-      ipAddressHash: sha256(`${process.env.JWT_ACCESS_SECRET ?? ""}:${input.ip}`), // salted, raw IP never stored
+      ipAddressHash: sha256(`${process.env.JWT_ACCESS_SECRET ?? ""}:${input.ip}`),
     },
   });
 
-  if (match) return { authentic: true, document: { title: match.title, registeredAt: match.createdAt }, computed };
-  return { authentic: false, closestMatch: closest, computed };
+  if (match) {
+    return {
+      authentic: true,
+      state: "current" as const,
+      versionNumber: null,
+      currentVersionNumber: null,
+      document: { title: match.title, registeredAt: match.createdAt },
+      computed,
+    };
+  }
+  if (old) {
+    return {
+      authentic: true,
+      state: "superseded" as const,
+      versionNumber: old.versionNumber,
+      currentVersionNumber: old.currentVersionNumber,
+      document: { title: old.documentTitle, registeredAt: null },
+      computed,
+    };
+  }
+  return { authentic: false, state: "unrecognized" as const, closestMatch: closest, computed };
 }

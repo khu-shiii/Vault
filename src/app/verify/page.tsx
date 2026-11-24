@@ -33,8 +33,22 @@ interface Result {
     tamperedBlocks: { index: number; byteStart: number | null; byteEnd: number | null }[];
   };
   computed: { fileHash: string; merkleRoot: string; blocks: number };
+  state?: "current" | "superseded" | "unrecognized";
+  versionNumber?: number | null;
+  currentVersionNumber?: number | null;
 }
-
+function VerifyStateBanner({ result }: { result: Result }) {
+  if (result.state !== "superseded") return null;
+  return (
+    <div role="alert" className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-4 text-amber-900">
+      <p className="font-semibold">Authentic, but superseded</p>
+      <p className="text-sm">
+        These bytes were registered as version {result.versionNumber}. The current version is{" "}
+        {result.currentVersionNumber}. This is not the latest copy of the document.
+      </p>
+    </div>
+  );
+}
 function VerifyForm() {
   const searchParams = useSearchParams();
   const [file, setFile] = useState<File | null>(null);
@@ -238,6 +252,7 @@ function VerifyForm() {
           aria-live="polite"
           className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6 animate-fadeIn"
         >
+                    <VerifyStateBanner result={result} />
           {result.authentic ? (
             /* AUTHENTIC RESULT (Crisp Emerald Green) */
             <div className="p-6 rounded-xl bg-emerald-50/90 border border-emerald-300 text-emerald-950 space-y-4">

@@ -1,6 +1,8 @@
+
 import { clientIp, handle, ok, readJson } from "@/lib/api";
 import { rateLimit } from "@/lib/rate-limit";
 import { parseHashes, verifyHashes } from "@/lib/verify";
+
 
 /** Zero-upload verification: the browser sends only hashes. */
 export const POST = handle(async (req) => {

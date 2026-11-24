@@ -20,7 +20,8 @@
     "jose": "^6.2.13",
     "next": "^14.2.18",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "recharts": "^2.12.7"
   },
   "devDependencies": {
     "@types/node": "^20.17.6",
@@ -33,5 +34,13 @@
     "tsx": "^4.23.15",
     "typescript": "^5.6.3",
     "vitest": "^2.1.5"
+  },
+  "allowScripts": {
+    "@prisma/client@5.22.0": true,
+    "@prisma/engines@5.22.0": true,
+    "prisma@5.22.0": true,
+    "argon2@0.45.1": true,
+    "esbuild@0.21.5": true,
+    "esbuild@0.28.2": true
   }
 }

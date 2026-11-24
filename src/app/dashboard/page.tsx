@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useState, useRef } from "react";
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/client";
 import { Navbar } from "@/components/Navbar";
@@ -9,8 +9,7 @@ import { Footer } from "@/components/Footer";
 import { CopyButton } from "@/components/CopyButton";
 import { TableSkeleton } from "@/components/LoadingSkeleton";
 import { EmptyState } from "@/components/EmptyState";
-import { Badge, RoleBadge } from "@/components/Badge";
-import { useAuth } from "@/context/AuthContext"; 
+import { useAuth } from "@/context/AuthContext";
 import { formatFileSize } from "@/lib/format";
 import {
   FileTextIcon,
@@ -21,8 +20,6 @@ import {
   AlertCircleIcon,
   ArrowRightIcon,
   CheckIcon,
-  LayersIcon,
-  LockIcon,
   XIcon,
 } from "@/components/Icons";
 
@@ -36,31 +33,31 @@ interface Doc {
   fileHash?: string;
 }
 
+const formatDate = (iso: string) =>
+  new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 
 export default function DashboardPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const canAttest = !!user && user.role !== "VIEWER";
+
   const [docs, setDocs] = useState<Doc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [busy, setBusy] = useState(false);
-
-  // Upload Form state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [customTitle, setCustomTitle] = useState("");
   const [isDragging, setIsDragging] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Search filter
   const [searchQuery, setSearchQuery] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
       setError("");
-      const docsRes = await api<{ documents: Doc[] }>("/api/documents");
-      setDocs(docsRes.documents);
+      const res = await api<{ documents: Doc[] }>("/api/documents");
+      setDocs(res.documents);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -72,27 +69,36 @@ export default function DashboardPage() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    if (!successMsg) return;
+    const t = setTimeout(() => setSuccessMsg(""), 5000);
+    return () => clearTimeout(t);
+  }, [successMsg]);
+
+  const clearFile = () => {
+    setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   async function onUpload(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!selectedFile) return;
 
+    const title = customTitle.trim();
+    const label = title || selectedFile.name;
     setBusy(true);
     setError("");
     setSuccessMsg("");
 
     const fd = new FormData();
     fd.append("file", selectedFile);
-    if (customTitle.trim()) {
-      fd.append("title", customTitle.trim());
-    }
+    if (title) fd.append("title", title);
 
     try {
       await api("/api/documents", { method: "POST", body: fd });
-      setSelectedFile(null);
+      clearFile();
       setCustomTitle("");
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      setSuccessMsg(`Document “${customTitle || selectedFile.name}” successfully attested.`);
-      setTimeout(() => setSuccessMsg(""), 5000);
+      setSuccessMsg(`“${label}” has been attested.`);
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -101,63 +107,64 @@ export default function DashboardPage() {
     }
   }
 
+  const onDropzoneKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      fileInputRef.current?.click();
+    }
+  };
 
-  const filteredDocs = docs.filter((d) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      d.title.toLowerCase().includes(q) ||
-      d.merkleRoot.toLowerCase().includes(q) ||
-      d.id.toLowerCase().includes(q)
+  const filteredDocs = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return docs;
+    return docs.filter(
+      (d) =>
+        d.title.toLowerCase().includes(q) ||
+        d.merkleRoot.toLowerCase().includes(q) ||
+        d.id.toLowerCase().includes(q)
     );
-  });
+  }, [docs, searchQuery]);
+
+  const latest = useMemo(() => {
+    if (docs.length === 0) return null;
+    return docs.reduce((a, b) => (new Date(a.createdAt) > new Date(b.createdAt) ? a : b));
+  }, [docs]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50">
+    <div className="flex min-h-screen flex-col bg-slate-50">
       <Navbar />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 space-y-8">
-        {/* Page Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-200">
+      <main className="mx-auto w-full max-w-7xl flex-1 space-y-8 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-                Document Ledger
-              </h1>
-              <Badge variant="emerald" size="sm" icon="shield-check">
-                Audit Chain Active
-              </Badge>
-            </div>
-            <p className="text-sm text-slate-500 mt-1">
-              Cryptographically registered documents, Merkle trees, and tamper-evident audit logs.
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Document ledger</h1>
+            <p className="mt-1 text-sm text-slate-600">
+              Attested documents, their Merkle roots, and the audit trail for each.
             </p>
           </div>
-
-          <div className="flex items-center gap-3">
-            <Link
-              href="/verify"
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg shadow-xs transition-all min-h-[40px] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-            >
-              <ShieldCheckIcon className="w-4 h-4 text-emerald-600" />
-              Public Verifier
-            </Link>
-          </div>
+          <Link
+            href="/verify"
+            className="inline-flex h-9 items-center gap-2 self-start rounded-lg border border-slate-300 bg-white px-3.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 sm:self-auto"
+          >
+            <ShieldCheckIcon className="h-4 w-4 text-indigo-600" />
+            Verify a file
+          </Link>
         </div>
 
-        {/* Status / Alert Messages */}
         {error && (
           <div
             role="alert"
-            className="flex items-start gap-3 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm shadow-xs"
+            className="flex items-start gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 animate-fadeIn"
           >
-            <AlertCircleIcon className="w-5 h-5 flex-shrink-0 text-rose-600 mt-0.5" />
-            <div className="flex-1 font-medium">{error}</div>
+            <AlertCircleIcon className="mt-0.5 h-4 w-4 flex-shrink-0 text-rose-600" />
+            <span className="flex-1">{error}</span>
             <button
+              type="button"
               onClick={() => setError("")}
-              className="p-1 text-rose-500 hover:text-rose-700"
+              className="rounded p-0.5 text-rose-500 hover:text-rose-700"
               aria-label="Dismiss error"
             >
-              <XIcon className="w-4 h-4" />
+              <XIcon className="h-4 w-4" />
             </button>
           </div>
         )}
@@ -165,83 +172,49 @@ export default function DashboardPage() {
         {successMsg && (
           <div
             role="status"
-            className="flex items-center gap-3 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm shadow-xs"
+            className="flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 animate-fadeIn"
           >
-            <CheckIcon className="w-5 h-5 flex-shrink-0 text-emerald-600" />
-            <div className="flex-1 font-medium">{successMsg}</div>
+            <CheckIcon className="h-4 w-4 flex-shrink-0 text-emerald-600" />
+            <span className="flex-1">{successMsg}</span>
             <button
+              type="button"
               onClick={() => setSuccessMsg("")}
-              className="p-1 text-emerald-600 hover:text-emerald-800"
-              aria-label="Dismiss success message"
+              className="rounded p-0.5 text-emerald-600 hover:text-emerald-800"
+              aria-label="Dismiss message"
             >
-              <XIcon className="w-4 h-4" />
+              <XIcon className="h-4 w-4" />
             </button>
           </div>
         )}
 
-        {/* Quick Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Registered Documents
-              </p>
-              <p className="text-2xl font-bold text-slate-900 mt-1">
-                {loading ? "…" : docs.length}
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600">
-              <FileTextIcon className="w-5 h-5" />
-            </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-sm font-medium text-slate-500">Attested documents</p>
+            <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">{loading ? "–" : docs.length}</p>
           </div>
-
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Merkle Trees Generated
-              </p>
-              <p className="text-2xl font-bold text-slate-900 mt-1">
-                {loading ? "…" : docs.length}
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600">
-              <LayersIcon className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Storage Model
-              </p>
-              <p className="text-sm font-bold text-emerald-700 mt-1 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                Zero-Data Retention
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600">
-              <LockIcon className="w-5 h-5" />
-            </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-sm font-medium text-slate-500">Most recent attestation</p>
+            <p className="mt-2 text-lg font-semibold text-slate-900">
+              {loading ? "–" : latest ? formatDate(latest.createdAt) : "None yet"}
+            </p>
           </div>
         </div>
 
-        {/* Upload & Attest Section (For ADMIN or SIGNER) */}
-        {user && user.role !== "VIEWER" && (
-          <section className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <UploadCloudIcon className="w-5 h-5 text-blue-600" />
-                <h2 className="text-base font-bold text-slate-900">
-                  Attest & Register New Document
-                </h2>
-              </div>
-              <span className="text-xs text-slate-500 hidden sm:inline">
-                Zero plaintext persistence
-              </span>
+        {canAttest && (
+          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
+              <h2 className="text-base font-semibold text-slate-900">Attest a new document</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                The file is hashed in your browser. Only its fingerprints are stored.
+              </p>
             </div>
 
-            <form onSubmit={onUpload} className="p-6 space-y-5">
+            <form onSubmit={onUpload} className="space-y-5 p-5 sm:p-6">
               <div
+                role="button"
+                tabIndex={0}
+                aria-label="Choose a file to attest"
+                onKeyDown={onDropzoneKey}
                 onDragOver={(e) => {
                   e.preventDefault();
                   setIsDragging(true);
@@ -254,12 +227,12 @@ export default function DashboardPage() {
                   if (f) setSelectedFile(f);
                 }}
                 onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-xl p-6 sm:p-8 text-center cursor-pointer transition-all duration-150 ${
+                className={`cursor-pointer rounded-xl border-2 border-dashed px-6 py-8 text-center transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-500/20 ${
                   isDragging
-                    ? "border-blue-600 bg-blue-50/50"
+                    ? "border-indigo-500 bg-indigo-50"
                     : selectedFile
-                    ? "border-emerald-400 bg-emerald-50/20"
-                    : "border-slate-300 hover:border-blue-500 hover:bg-slate-50/60"
+                    ? "border-emerald-300 bg-emerald-50/40"
+                    : "border-slate-300 hover:border-slate-400 hover:bg-slate-50"
                 }`}
               >
                 <input
@@ -268,276 +241,216 @@ export default function DashboardPage() {
                   name="file"
                   required
                   className="sr-only"
+                  tabIndex={-1}
                   onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
                 />
 
                 {selectedFile ? (
-                  <div className="flex flex-col items-center justify-center space-y-2">
-                    <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shadow-xs">
-                      <FileTextIcon className="w-6 h-6" />
-                    </div>
-                    <p className="font-semibold text-slate-900 text-base">
-                      {selectedFile.name}
-                    </p>
-                    <div className="flex items-center gap-2 text-xs text-slate-500">
-                      <span>{formatFileSize(selectedFile.size)}</span>
-                      <span>•</span>
-                      <span className="text-emerald-700 font-medium">Ready for attestation</span>
-                    </div>
+                  <div className="flex flex-col items-center gap-2">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                      <FileTextIcon className="h-5 w-5" />
+                    </span>
+                    <p className="max-w-full truncate text-sm font-semibold text-slate-900">{selectedFile.name}</p>
+                    <p className="text-xs text-slate-500">{formatFileSize(selectedFile.size)} · ready to attest</p>
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setSelectedFile(null);
-                        if (fileInputRef.current) fileInputRef.current.value = "";
+                        clearFile();
                       }}
-                      className="text-xs text-rose-600 hover:text-rose-700 font-medium pt-1 underline"
+                      className="mt-1 text-xs font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900"
                     >
-                      Remove and choose another file
+                      Choose a different file
                     </button>
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center space-y-2">
-                    <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-1">
-                      <UploadCloudIcon className="w-6 h-6" />
-                    </div>
-                    <p className="font-medium text-slate-800 text-sm">
-                      <span className="text-blue-600 font-semibold underline">
-                        Click to select a file
-                      </span>{" "}
-                      or drag and drop here
+                  <div className="flex flex-col items-center gap-2">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
+                      <UploadCloudIcon className="h-5 w-5" />
+                    </span>
+                    <p className="text-sm font-medium text-slate-800">
+                      <span className="text-indigo-600">Choose a file</span> or drop it here
                     </p>
-                    <p className="text-xs text-slate-500">
-                      PDF, DOCX, TXT, JSON, or any binary asset (up to 20MB)
-                    </p>
+                    <p className="text-xs text-slate-500">Any file type, up to 20 MB</p>
                   </div>
                 )}
               </div>
 
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                <div className="flex-1">
-                  <input
-                    name="title"
-                    type="text"
-                    value={customTitle}
-                    onChange={(e) => setCustomTitle(e.target.value)}
-                    placeholder="Document Title (Optional, defaults to file name)"
-                    className="w-full px-3.5 py-2.5 min-h-[44px] rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition"
-                  />
-                </div>
-
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <input
+                  name="title"
+                  type="text"
+                  value={customTitle}
+                  onChange={(e) => setCustomTitle(e.target.value)}
+                  placeholder="Title (optional, defaults to the file name)"
+                  className="h-10 w-full flex-1 rounded-lg border border-slate-300 bg-white px-3.5 text-sm text-slate-900 placeholder:text-slate-400 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/15"
+                />
                 <button
                   type="submit"
                   disabled={!selectedFile || busy}
-                  className="inline-flex items-center justify-center gap-2 px-6 py-2.5 min-h-[44px] rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-sm shadow-sm transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  className="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-indigo-600 px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {busy ? (
                     <>
-                      <Spinner className="w-4 h-4 text-white" />
-                      Computing Merkle Tree…
+                      <Spinner className="h-4 w-4 text-white" />
+                      Attesting…
                     </>
                   ) : (
-                    <>
-                      <ShieldCheckIcon className="w-4 h-4" />
-                      Upload & Attest
-                    </>
+                    "Attest document"
                   )}
                 </button>
               </div>
-
-              <p className="text-xs text-slate-500 flex items-center gap-1.5 pt-1">
-                <LockIcon className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                <span>
-                  <strong>Privacy:</strong> File bytes are partitioned in RAM, hashed to generate Merkle leaves, and immediately discarded.
-                </span>
-              </p>
             </form>
           </section>
         )}
 
-        {/* Ledger Document List Section */}
-        <section className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden space-y-4 p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
+        <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <div>
-              <h2 className="text-lg font-bold text-slate-900">
-                Attested Documents ({filteredDocs.length})
+              <h2 className="text-base font-semibold text-slate-900">
+                Documents <span className="font-normal text-slate-500">({filteredDocs.length})</span>
               </h2>
-              <p className="text-xs text-slate-500">
-                Click any document to inspect cryptographic leaves and hash-chain sequence.
-              </p>
+              <p className="mt-0.5 text-sm text-slate-600">Select a document to see its audit trail and proofs.</p>
             </div>
 
-            {/* Search Filter */}
             <div className="relative w-full sm:w-72">
-              <SearchIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
-                type="text"
+                type="search"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by title or hash…"
-                className="w-full pl-9 pr-3.5 py-2 min-h-[40px] rounded-lg border border-slate-300 text-xs sm:text-sm bg-slate-50/50 focus:bg-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition"
+                placeholder="Search by title or hash"
+                aria-label="Search documents"
+                className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/15"
               />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
-                  aria-label="Clear search"
-                >
-                  <XIcon className="w-3.5 h-3.5" />
-                </button>
-              )}
             </div>
           </div>
 
-          {loading ? (
-            <TableSkeleton rows={5} />
-          ) : filteredDocs.length === 0 ? (
-            <EmptyState
-              title={searchQuery ? "No matching documents" : "No documents attested yet"}
-              description={
-                searchQuery
-                  ? "No registered records matched your query. Try a different search term."
-                  : "Upload a document above to generate its SHA-256 Merkle tree and tamper-evident hash-chained audit record."
-              }
-              action={
-                searchQuery ? (
-                  <button
-                    onClick={() => setSearchQuery("")}
-                    className="text-xs font-semibold text-blue-600 underline"
-                  >
-                    Clear Search Filter
-                  </button>
-                ) : user?.role !== "VIEWER" ? (
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[40px] text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs"
-                  >
-                    <UploadCloudIcon className="w-4 h-4" />
-                    Select File to Attest
-                  </button>
-                ) : null
-              }
-            />
-          ) : (
-            <>
-              {/* Desktop Table View (Hidden on mobile) */}
-              <div className="hidden md:block overflow-x-auto rounded-lg border border-slate-200">
-                <table className="w-full text-left text-sm divide-y divide-slate-200">
-                  <thead className="bg-slate-50 text-slate-600 font-semibold text-xs uppercase tracking-wider">
-                    <tr>
-                      <th scope="col" className="py-3 px-4">Document Title</th>
-                      <th scope="col" className="py-3 px-4">Size</th>
-                      <th scope="col" className="py-3 px-4">Merkle Root</th>
-                      <th scope="col" className="py-3 px-4">Registered</th>
-                      <th scope="col" className="py-3 px-4 text-right">Attestation</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 bg-white">
-                    {filteredDocs.map((d) => (
-                      <tr
-                        key={d.id}
-                        className="hover:bg-slate-50/80 transition-colors group cursor-pointer"
-                        onClick={() => router.push(`/documents/${d.id}`)}
-                      >
-                        <td className="py-3.5 px-4 font-medium text-slate-900">
-                          <div className="flex items-center gap-2">
-                            <FileTextIcon className="w-4 h-4 text-blue-600 flex-shrink-0" />
+          <div className="p-2 sm:p-4">
+            {loading ? (
+              <div className="p-3">
+                <TableSkeleton rows={5} />
+              </div>
+            ) : filteredDocs.length === 0 ? (
+              <EmptyState
+                title={searchQuery ? "No matching documents" : "No documents yet"}
+                description={
+                  searchQuery
+                    ? "Nothing matches that search. Try a different title or hash."
+                    : canAttest
+                    ? "Attest your first document above. Vault will record its Merkle root in the audit log."
+                    : "Documents attested by your organisation will appear here."
+                }
+                action={
+                  searchQuery ? (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery("")}
+                      className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
+                    >
+                      Clear search
+                    </button>
+                  ) : canAttest ? (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="inline-flex h-9 items-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-500"
+                    >
+                      <UploadCloudIcon className="h-4 w-4" />
+                      Choose a file
+                    </button>
+                  ) : null
+                }
+              />
+            ) : (
+              <>
+                <div className="hidden overflow-hidden rounded-lg border border-slate-200 md:block">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-xs font-medium uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th scope="col" className="px-4 py-3">Title</th>
+                        <th scope="col" className="px-4 py-3">Size</th>
+                        <th scope="col" className="px-4 py-3">Merkle root</th>
+                        <th scope="col" className="px-4 py-3">Attested</th>
+                        <th scope="col" className="px-4 py-3">
+                          <span className="sr-only">Open</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 bg-white">
+                      {filteredDocs.map((d) => (
+                        <tr
+                          key={d.id}
+                          onClick={() => router.push(`/documents/${d.id}`)}
+                          className="cursor-pointer transition-colors hover:bg-slate-50"
+                        >
+                          <td className="px-4 py-3.5">
                             <Link
                               href={`/documents/${d.id}`}
                               onClick={(e) => e.stopPropagation()}
-                              className="font-semibold text-slate-900 hover:text-blue-600 hover:underline flex items-center gap-1"
+                              className="font-medium text-slate-900 hover:text-indigo-600"
                             >
                               {d.title}
                             </Link>
-                          </div>
-                        </td>
-                        <td className="py-3.5 px-4 text-slate-600 text-xs font-medium">
-                          {formatFileSize(d.fileSize)}
-                        </td>
-                        <td className="py-3.5 px-4 font-mono text-xs text-slate-700">
-                          <div className="flex items-center gap-1.5">
-                            <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded border border-slate-200">
-                              {d.merkleRoot.slice(0, 10)}…{d.merkleRoot.slice(-6)}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3.5 text-slate-600">{formatFileSize(d.fileSize)}</td>
+                          <td className="px-4 py-3.5">
+                            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                              <code className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-700">
+                                {d.merkleRoot.slice(0, 10)}…{d.merkleRoot.slice(-6)}
+                              </code>
+                              <CopyButton text={d.merkleRoot} title="Copy Merkle root" />
+                            </div>
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3.5 text-slate-600">
+                            {new Date(d.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+                          </td>
+                          <td className="px-4 py-3.5 text-right">
+                            <span className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600">
+                              View
+                              <ArrowRightIcon className="h-3.5 w-3.5" />
                             </span>
-                            <CopyButton text={d.merkleRoot} title="Copy full Merkle Root" />
-                          </div>
-                        </td>
-                        <td className="py-3.5 px-4 text-slate-500 text-xs whitespace-nowrap">
-                          {new Date(d.createdAt).toLocaleString(undefined, {
-                            dateStyle: "medium",
-                            timeStyle: "short",
-                          })}
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <Link
-                            href={`/documents/${d.id}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 group-hover:translate-x-0.5 transition-all p-1"
-                          >
-                            View Audit Trail
-                            <ArrowRightIcon className="w-3.5 h-3.5" />
-                          </Link>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
 
-              {/* Mobile / Tablet Card View (Shown on screens < md) */}
-              <div className="grid grid-cols-1 gap-3 md:hidden">
-                {filteredDocs.map((d) => (
-                  <div
-                    key={d.id}
-                    onClick={() => router.push(`/documents/${d.id}`)}
-                    className="p-4 rounded-xl border border-slate-200 bg-white hover:border-blue-400 hover:shadow-sm transition-all space-y-3 cursor-pointer"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FileTextIcon className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                        <h3 className="font-semibold text-slate-900 text-sm truncate">
-                          {d.title}
-                        </h3>
-                      </div>
-                      <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 flex-shrink-0">
-                        {formatFileSize(d.fileSize)}
-                      </span>
-                    </div>
-
-                    <div className="space-y-1">
-                      <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                        Merkle Root
-                      </span>
-                      <div className="flex items-center justify-between gap-2 bg-slate-50 p-2 rounded-lg border border-slate-200 text-xs font-mono text-slate-700">
-                        <span className="truncate">
-                          {d.merkleRoot.slice(0, 12)}…{d.merkleRoot.slice(-8)}
-                        </span>
-                        <CopyButton text={d.merkleRoot} title="Copy Merkle Root" />
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-xs text-slate-500">
-                      <span>
-                        {new Date(d.createdAt).toLocaleDateString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}
-                      </span>
+                <ul className="space-y-3 md:hidden">
+                  {filteredDocs.map((d) => (
+                    <li key={d.id}>
                       <Link
                         href={`/documents/${d.id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="inline-flex items-center gap-1 font-semibold text-blue-600 hover:text-blue-800 min-h-[36px] py-1"
+                        className="block rounded-lg border border-slate-200 bg-white p-4 transition-colors hover:border-slate-300 hover:bg-slate-50"
                       >
-                        Inspect Proofs
-                        <ArrowRightIcon className="w-3.5 h-3.5" />
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="min-w-0 truncate text-sm font-medium text-slate-900">{d.title}</p>
+                          <span className="flex-shrink-0 text-xs text-slate-500">{formatFileSize(d.fileSize)}</span>
+                        </div>
+                        <div
+                          className="mt-3 flex items-center justify-between gap-2 rounded-md bg-slate-50 px-2.5 py-2"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                        >
+                          <code className="truncate font-mono text-xs text-slate-700">
+                            {d.merkleRoot.slice(0, 12)}…{d.merkleRoot.slice(-8)}
+                          </code>
+                          <CopyButton text={d.merkleRoot} title="Copy Merkle root" />
+                        </div>
+                        <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+                          <span>{formatDate(d.createdAt)}</span>
+                          <span className="font-medium text-indigo-600">View proofs →</span>
+                        </div>
                       </Link>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
         </section>
       </main>
 

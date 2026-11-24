@@ -38,7 +38,6 @@ model Organization {
   @@map("organizations")
 }
 
-
 model User {
   id             String          @id @default(uuid())
   organizationId String          @map("organization_id")
@@ -56,7 +55,6 @@ model User {
   @@map("users")
 }
 
-
 model RefreshToken {
   id        String    @id @default(uuid())
   userId    String    @map("user_id")
@@ -71,22 +69,23 @@ model RefreshToken {
 }
 
 model Document {
-  id                   String                @id @default(uuid())
-  organizationId       String                @map("organization_id")
-  title                String
-  fileHash             String                @map("file_hash")
-  merkleRoot           String                @map("merkle_root")
-  fileSize             Int                   @map("file_size")
-  
-  mimeType             String                @default("application/octet-stream") @map("mime_type")
-  metadata             Json                  @default("{}") @map("metadata")
-  createdAt            DateTime              @default(now()) @map("created_at")
-  updatedAt            DateTime              @updatedAt @map("updated_at")
+  id             String @id @default(uuid())
+  organizationId String @map("organization_id")
+  title          String
+  fileHash       String @map("file_hash")
+  merkleRoot     String @map("merkle_root")
+  fileSize       Int    @map("file_size")
+
+  mimeType  String   @default("application/octet-stream") @map("mime_type")
+  metadata  Json     @default("{}") @map("metadata")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   merkleBlocks         MerkleBlock[]
   auditLogEntries      AuditLogEntry[]
   verificationAttempts VerificationAttempt[]
+  versions             DocumentVersion[]
 
   @@index([fileHash], name: "idx_documents_file_hash")
   @@index([merkleRoot], name: "idx_documents_merkle_root")
@@ -95,15 +94,15 @@ model Document {
 }
 
 model MerkleBlock {
-  id         String   @id @default(uuid())
-  documentId String   @map("document_id")
-  blockIndex Int      @map("block_index")
-  blockHash  String   @map("block_hash")
-  parentHash String?  @map("parent_hash")
-  chunkSize  Int      @default(262144) @map("chunk_size") // 256 KB
+  id          String  @id @default(uuid())
+  documentId  String  @map("document_id")
+  blockIndex  Int     @map("block_index")
+  blockHash   String  @map("block_hash")
+  parentHash  String? @map("parent_hash")
+  chunkSize   Int     @default(262144) @map("chunk_size") // 256 KB
   chunkOffset Int     @default(0) @map("chunk_offset")
 
-  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@unique([documentId, blockIndex], name: "uq_doc_block_idx")
   @@index([documentId], name: "idx_merkle_blocks_doc_id")
@@ -121,8 +120,8 @@ model AuditLogEntry {
   previousHash String     @map("previous_hash")
   currentHash  String     @map("current_hash")
 
-  document     Document   @relation(fields: [documentId], references: [id], onDelete: Restrict)
-  actor        User?      @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  document Document @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  actor    User?    @relation(fields: [actorId], references: [id], onDelete: Restrict)
 
   @@unique([documentId, seq], name: "uq_audit_doc_seq")
   @@index([actorId], name: "idx_audit_actor_id")
@@ -130,15 +129,15 @@ model AuditLogEntry {
 }
 
 model VerificationAttempt {
-  id           String   @id @default(uuid())
-  documentId   String?  @map("document_id")
-  isAuthentic  Boolean  @map("is_authentic")
-  fileHash     String   @map("file_hash")
-  merkleRoot   String   @map("merkle_root")
-  verifiedAt   DateTime @default(now()) @map("verified_at")
-  ipAddressHash String? @map("ip_address_hash")
+  id            String   @id @default(uuid())
+  documentId    String?  @map("document_id")
+  isAuthentic   Boolean  @map("is_authentic")
+  fileHash      String   @map("file_hash")
+  merkleRoot    String   @map("merkle_root")
+  verifiedAt    DateTime @default(now()) @map("verified_at")
+  ipAddressHash String?  @map("ip_address_hash")
 
-  document     Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  document Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
 
   @@index([fileHash], name: "idx_verifications_file_hash")
   @@index([merkleRoot], name: "idx_verifications_merkle_root")
@@ -155,9 +154,9 @@ model SecurityEvent {
   details        Json     @default("{}")
   createdAt      DateTime @default(now()) @map("created_at")
 
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  actor          User?        @relation("SecurityActor", fields: [actorId], references: [id], onDelete: SetNull)
-  target         User?        @relation("SecurityTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor        User?        @relation("SecurityActor", fields: [actorId], references: [id], onDelete: SetNull)
+  target       User?        @relation("SecurityTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, createdAt], name: "idx_security_events_org_created")
   @@map("security_events")
@@ -292,4 +291,20 @@ model Action {
 
   @@index([decisionId, step], map: "idx_actions_decision_step")
   @@map("actions")
+}
+
+model DocumentVersion {
+  id            String   @id @default(uuid())
+  documentId    String   @map("document_id")
+  versionNumber Int      @map("version_number")
+  rootHash      String   @map("root_hash")
+  leafCount     Int      @map("leaf_count")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, versionNumber], name: "uq_doc_version_no")
+  @@unique([documentId, rootHash], name: "uq_doc_version_root")
+  @@index([rootHash], name: "idx_doc_versions_root")
+  @@map("document_versions")
 }
