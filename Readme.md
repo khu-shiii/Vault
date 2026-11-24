@@ -17,7 +17,7 @@ SEED_PASSWORD=ChangeMe123! npx prisma db seed
 npm test
 npm run dev              # http://localhost:3000
 ```
-Login: `admin@example.com` / the SEED_PASSWORD you used.
+Login: `admin@example.com` / the SEED_PASSWOqRD you used.
 
 ## API
 | Method | Path | Auth |
