@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
+import { useAuth } from "@/context/AuthContext";
+import { addDocumentVersionInBrowser } from "@/lib/verify-client";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { CopyButton } from "@/components/CopyButton";
@@ -21,7 +23,18 @@ import {
   AlertCircleIcon,
   LinkIcon,
   UserIcon,
+  UploadCloudIcon,
+  CheckIcon,
+  Spinner,
 } from "@/components/Icons";
+
+interface VersionRow {
+  id: string;
+  versionNumber: number;
+  rootHash: string;
+  leafCount: number;
+  createdAt: string;
+}
 
 interface Detail {
   document: {
@@ -39,6 +52,7 @@ interface Detail {
     brokenSeq?: number;
     reason?: string;
   };
+  versions?: VersionRow[];
   auditLog: {
     seq: number;
     actionType: string;
@@ -51,8 +65,15 @@ interface Detail {
 }
 
 export default function DocumentPage({ params }: { params: { id: string } }) {
+  const { user } = useAuth();
+  const canModify = !!user && user.role !== "VIEWER";
   const [data, setData] = useState<Detail | null>(null);
   const [error, setError] = useState("");
+  const [versionFile, setVersionFile] = useState<File | null>(null);
+  const [versionBusy, setVersionBusy] = useState(false);
+  const [versionError, setVersionError] = useState("");
+  const [versionNotice, setVersionNotice] = useState("");
+  const versionInputRef = useRef<HTMLInputElement>(null);
   const fetched = useRef(false); // each load writes a VIEW audit entry, so avoid the dev double-fetch
 
   useEffect(() => {
@@ -62,6 +83,40 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
       .then(setData)
       .catch((e) => setError((e as Error).message));
   }, [params.id]);
+
+  async function onUploadVersion(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!versionFile || !data) return;
+    setVersionBusy(true);
+    setVersionError("");
+    setVersionNotice("");
+    try {
+      const res = await addDocumentVersionInBrowser(data.document.id, versionFile);
+      setVersionFile(null);
+      if (versionInputRef.current) versionInputRef.current.value = "";
+      setVersionNotice(`Version ${res.versionNumber} recorded and appended to the audit chain.`);
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              document: {
+                ...prev.document,
+                fileHash: res.fileHash,
+                merkleRoot: res.rootHash,
+                fileSize: res.fileSize,
+                blockCount: res.blockCount,
+              },
+              versions: res.versions,
+              auditLog: res.auditEntry ? [...prev.auditLog, res.auditEntry] : prev.auditLog,
+            }
+          : prev
+      );
+    } catch (err) {
+      setVersionError((err as Error).message || "Could not record new version.");
+    } finally {
+      setVersionBusy(false);
+    }
+  }
 
 
   if (error) {
@@ -105,6 +160,8 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
   }
 
   const { document: d, chain, auditLog } = data;
+  const versions = data.versions ?? [];
+  const currentVersion = versions[0]?.versionNumber ?? 1;
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
@@ -139,6 +196,9 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs uppercase font-bold tracking-wider text-slate-400">
                   Document Attestation
+                </span>
+                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  v{currentVersion}
                 </span>
                 {d.mimeType && (
                   <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-slate-100 text-slate-600 border border-slate-200">
@@ -288,6 +348,102 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
         </section>
 
         <AnchorPanel documentId={d.id} />
+
+        {(canModify || versions.length > 0) && (
+          <section
+            className="bg-white border border-slate-200 rounded-xl shadow-xs p-4 sm:p-6 space-y-5"
+            aria-labelledby="versions-title"
+          >
+            <div className="space-y-1">
+              <h2 id="versions-title" className="text-base font-bold text-slate-900">
+                Document Versions
+              </h2>
+              <p className="text-xs text-slate-500">
+                Register a modified file as the next version in this document&apos;s audit chain. Files are hashed in your browser—only hashes leave your device.
+              </p>
+            </div>
+
+            {canModify && (
+              <form onSubmit={onUploadVersion} className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  <input
+                    ref={versionInputRef}
+                    type="file"
+                    aria-label="Choose modified file for next version"
+                    disabled={versionBusy}
+                    onChange={(e) => {
+                      setVersionFile(e.target.files?.[0] ?? null);
+                      setVersionError("");
+                      setVersionNotice("");
+                    }}
+                    className="block w-full text-sm text-slate-700 file:mr-3 file:py-2 file:px-3.5 file:rounded-lg file:border file:border-slate-300 file:text-xs file:font-semibold file:bg-slate-50 file:text-slate-700 hover:file:bg-slate-100"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!versionFile || versionBusy}
+                    className="inline-flex items-center justify-center gap-2 whitespace-nowrap px-4 py-2 min-h-[40px] text-sm font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {versionBusy ? (
+                      <>
+                        <Spinner className="w-4 h-4 text-white" />
+                        Registering v{currentVersion + 1}…
+                      </>
+                    ) : (
+                      <>
+                        <UploadCloudIcon className="w-4 h-4" />
+                        Upload Version {currentVersion + 1}
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {versionFile && (
+                  <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                    <FileTextIcon className="w-3.5 h-3.5 text-slate-400" />
+                    Selected: <span className="font-medium text-slate-700">{versionFile.name}</span> ({formatFileSize(versionFile.size)})
+                  </p>
+                )}
+
+                {versionError && (
+                  <p role="alert" className="flex items-start gap-2 p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs sm:text-sm">
+                    <AlertCircleIcon className="w-4 h-4 mt-0.5 shrink-0 text-rose-600" />
+                    <span>{versionError}</span>
+                  </p>
+                )}
+
+                {versionNotice && (
+                  <p role="status" className="flex items-start gap-2 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm">
+                    <CheckIcon className="w-4 h-4 mt-0.5 shrink-0 text-emerald-600" />
+                    <span>{versionNotice}</span>
+                  </p>
+                )}
+              </form>
+            )}
+
+            {versions.length > 0 && (
+              <ul className="divide-y divide-slate-100 border border-slate-200 rounded-lg overflow-hidden">
+                {versions.map((v, idx) => (
+                  <li key={v.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-3 bg-white text-xs">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono font-bold text-slate-800">v{v.versionNumber}</span>
+                      <Badge variant={idx === 0 ? "emerald" : "amber"} size="sm">
+                        {idx === 0 ? "Current" : "Superseded"}
+                      </Badge>
+                      <span className="text-slate-500">{v.leafCount} block(s)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <code className="font-mono text-slate-700 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
+                        {v.rootHash.slice(0, 12)}…{v.rootHash.slice(-8)}
+                      </code>
+                      <CopyButton text={v.rootHash} title={`Copy v${v.versionNumber} root`} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
+
         {/* Immutable Hash-Chained Audit Trail Section */}
         <section className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden space-y-4 p-4 sm:p-6">
           <div className="space-y-1">
@@ -321,7 +477,14 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
                       #{e.seq}
                     </td>
                     <td className="py-3.5 px-4">
-                      <ActionBadge action={e.actionType} />
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <ActionBadge action={e.actionType} />
+                        {e.payload?.event === "VERSION_ADDED" && e.payload?.versionNumber && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            v{e.payload.versionNumber}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-3.5 px-4 text-xs font-medium text-slate-700">
                       {e.actorEmail ? (
@@ -366,6 +529,11 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
                       Seq #{e.seq}
                     </span>
                     <ActionBadge action={e.actionType} />
+                    {e.payload?.event === "VERSION_ADDED" && e.payload?.versionNumber && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        v{e.payload.versionNumber}
+                      </span>
+                    )}
                   </div>
                   <span className="text-[11px] text-slate-400">
                     {new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}

@@ -1,19 +1,13 @@
 import { findSupersededVersion } from "./versioning";
 import { ApiError } from "./api";
 import { db } from "./db";
-import { hashNode, sha256 } from "./crypto/merkle";
+import { buildMerkleTreeFromLeaves, CHUNK_SIZE, sha256 } from "./crypto/merkle";
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
 /** The server derives the root itself from the leaves, so a client cannot claim a root it didn't compute. */
 export function rootFromLeaves(leaves: string[]): string {
-  let level = leaves;
-  while (level.length > 1) {
-    const next: string[] = [];
-    for (let i = 0; i < level.length; i += 2) next.push(i + 1 < level.length ? hashNode(level[i], level[i + 1]) : level[i]);
-    level = next;
-  }
-  return level[0];
+  return buildMerkleTreeFromLeaves(leaves).root;
 }
 
 export function parseHashes(body: Record<string, unknown>) {
@@ -22,8 +16,19 @@ export function parseHashes(body: Record<string, unknown>) {
   if (!HEX64.test(fileHash) || leaves.length < 1 || leaves.length > 4096 || !leaves.every((l) => typeof l === "string" && HEX64.test(l.toLowerCase()))) {
     throw new ApiError(400, "BAD_REQUEST", "fileHash and leaves (1 to 4096 SHA-256 hex strings) are required");
   }
+  let fileSize: number | undefined;
+  if (body.fileSize !== undefined) {
+    if (typeof body.fileSize !== "number" || !Number.isInteger(body.fileSize) || body.fileSize < 0) {
+      throw new ApiError(400, "BAD_REQUEST", "fileSize must be a non-negative integer");
+    }
+    const expectedLeaves = body.fileSize === 0 ? 1 : Math.ceil(body.fileSize / CHUNK_SIZE);
+    if (expectedLeaves !== leaves.length) {
+      throw new ApiError(400, "BAD_REQUEST", "fileSize does not match leaf count");
+    }
+    fileSize = body.fileSize;
+  }
   const documentId = typeof body.documentId === "string" && body.documentId.trim() ? body.documentId.trim().slice(0, 64) : undefined;
-  return { fileHash, leaves: (leaves as string[]).map((l) => l.toLowerCase()), documentId };
+  return { fileHash, leaves: (leaves as string[]).map((l) => l.toLowerCase()), documentId, fileSize };
 }
 
 async function locateTampering(leaves: string[], documentId?: string) {

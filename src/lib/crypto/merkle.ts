@@ -36,12 +36,18 @@ export function chunkBuffer(buffer: Buffer, chunkSize: number = CHUNK_SIZE): Buf
   return chunks;
 }
 
-export function buildMerkleTree(chunks: Buffer[], chunkSize: number = CHUNK_SIZE): MerkleTreeResult {
-  const input = chunks.length === 0 ? [Buffer.alloc(0)] : chunks;
-  const leaves = input.map(hashLeaf);
-  const levels: string[][] = [leaves];
+export function buildMerkleTreeFromLeaves(
+  leaves: string[],
+  chunkSizes?: number[],
+  chunkSize: number = CHUNK_SIZE
+): MerkleTreeResult {
+  if (leaves.length === 0) {
+    throw new Error("At least one leaf hash is required");
+  }
+  const normalized = leaves.map((l) => l.toLowerCase());
+  const levels: string[][] = [normalized];
 
-  let level = leaves;
+  let level = normalized;
   while (level.length > 1) {
     const next: string[] = [];
     for (let i = 0; i < level.length; i += 2) {
@@ -54,15 +60,24 @@ export function buildMerkleTree(chunks: Buffer[], chunkSize: number = CHUNK_SIZE
   }
 
   const root = level[0];
-  const blocks = leaves.map((blockHash, index) => ({
+  const blocks = normalized.map((blockHash, index) => ({
     blockIndex: index,
     blockHash,
     parentHash: levels.length > 1 ? levels[1][Math.floor(index / 2)] : root,
-    chunkSize: input[index].length,
+    chunkSize: chunkSizes?.[index] ?? chunkSize,
     chunkOffset: index * chunkSize,
   }));
 
-  return { root, leaves, levels, blocks };
+  return { root, leaves: normalized, levels, blocks };
+}
+
+export function buildMerkleTree(chunks: Buffer[], chunkSize: number = CHUNK_SIZE): MerkleTreeResult {
+  const input = chunks.length === 0 ? [Buffer.alloc(0)] : chunks;
+  return buildMerkleTreeFromLeaves(
+    input.map(hashLeaf),
+    input.map((c) => c.length),
+    chunkSize
+  );
 }
 
 export function generateMerkleProof(leafIndex: number, levels: string[][]): MerkleProofStep[] {

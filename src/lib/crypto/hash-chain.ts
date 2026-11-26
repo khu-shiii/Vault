@@ -27,6 +27,15 @@ export function calculateGenesisHash(documentId: string, fileHash: string): stri
   return sha256(canonicalJson({ type: "GENESIS", documentId, fileHash }));
 }
 
+/** Original v1 file hash anchored at genesis, preserved in metadata when newer versions update `document.fileHash`. */
+export function resolveGenesisFileHash(fileHash: string, metadata: unknown): string {
+  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+    const genesis = (metadata as Record<string, unknown>).genesisFileHash;
+    if (typeof genesis === "string" && /^[0-9a-f]{64}$/i.test(genesis)) return genesis.toLowerCase();
+  }
+  return fileHash;
+}
+
 export interface AuditHashInput {
   seq: number;
   documentId: string;

@@ -4,6 +4,8 @@ import { db } from "../src/lib/db";
 import { buildMerkleTree, chunkBuffer, sha256 } from "../src/lib/crypto/merkle";
 import { digestFile } from "../src/lib/crypto/merkle-browser";
 import { signAccessToken } from "../src/lib/auth/tokens";
+import { POST as uploadDoc } from "../src/app/api/documents/route";
+import { GET as getDoc } from "../src/app/api/documents/[id]/route";
 import { POST as createVersion } from "../src/app/api/documents/[id]/versions/route";
 import { POST as verifyHashes } from "../src/app/api/verify/hashes/route";
 
@@ -14,10 +16,18 @@ const json = (body: unknown, cookie?: string) =>
     headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
     body: JSON.stringify(body),
   });
+const fileUpload = (buf: Buffer, cookie: string, title: string) => {
+  const fd = new FormData();
+  fd.append("file", new Blob([new Uint8Array(buf)]), `${title}.bin`);
+  fd.append("title", title);
+  return new Request("http://localhost/api/documents", { method: "POST", headers: { cookie }, body: fd });
+};
 
 let orgId: string;
 let userId: string;
 let cookie: string;
+let signerCookie: string;
+let viewerCookie: string;
 
 beforeAll(async () => {
   if (!globalThis.crypto?.subtle) Object.defineProperty(globalThis, "crypto", { value: webcrypto, configurable: true });
@@ -27,9 +37,16 @@ beforeAll(async () => {
   const user = await db.user.create({
     data: { organizationId: orgId, email: `ver-${suffix}@test.local`, passwordHash: "x", role: "ADMIN" },
   });
+  const signer = await db.user.create({
+    data: { organizationId: orgId, email: `ver-signer-${suffix}@test.local`, passwordHash: "x", role: "SIGNER" },
+  });
+  const viewer = await db.user.create({
+    data: { organizationId: orgId, email: `ver-viewer-${suffix}@test.local`, passwordHash: "x", role: "VIEWER" },
+  });
   userId = user.id;
-  const token = await signAccessToken({ userId, email: user.email, role: "ADMIN", organizationId: orgId });
-  cookie = `vault_access=${token}`;
+  cookie = `vault_access=${await signAccessToken({ userId, email: user.email, role: "ADMIN", organizationId: orgId })}`;
+  signerCookie = `vault_access=${await signAccessToken({ userId: signer.id, email: signer.email, role: "SIGNER", organizationId: orgId })}`;
+  viewerCookie = `vault_access=${await signAccessToken({ userId: viewer.id, email: viewer.email, role: "VIEWER", organizationId: orgId })}`;
 });
 
 /** Creates a document from the given bytes, the same way the upload path does (no versions yet). */
@@ -130,5 +147,40 @@ describe("verify state after versioning", () => {
     const body = (await (await verifyHashes(json(digest), {})).json()).data;
     expect(body.state).toBe("unrecognized");
     expect(body.authentic).toBe(false);
+  });
+
+  it("keeps the audit chain valid and updates merkle blocks for tamper localization across versions", async () => {
+    const v1 = randomBytes(600 * 1024); // 3 chunks
+    const up = await uploadDoc(fileUpload(v1, signerCookie, "versioned-doc"), {});
+    expect(up.status).toBe(201);
+    const docId = (await up.json()).data.document.id as string;
+
+    // Viewer cannot add a version; Signer can.
+    const v2 = Buffer.from(v1);
+    v2[10] ^= 0xff; // modifies block 0
+    const d2 = await digestFile(ab(v2));
+    expect((await createVersion(json({ ...d2, fileSize: v2.length }, viewerCookie), { params: { id: docId } })).status).toBe(403);
+
+    const added = await createVersion(json({ ...d2, fileSize: v2.length }, signerCookie), { params: { id: docId } });
+    expect(added.status).toBe(201);
+    const addedData = (await added.json()).data;
+    expect(addedData.versionNumber).toBe(2);
+    expect(addedData.auditEntry.payload.event).toBe("VERSION_ADDED");
+
+    // Audit chain must still verify cleanly against the preserved v1 genesis hash.
+    const detail = await getDoc(new Request("http://localhost/x", { headers: { cookie: signerCookie } }), { params: { id: docId } });
+    expect(detail.status).toBe(200);
+    const detailData = (await detail.json()).data;
+    expect(detailData.chain.isValid).toBe(true);
+    expect(detailData.versions.map((v: { versionNumber: number }) => v.versionNumber)).toEqual([2, 1]);
+    expect(detailData.auditLog.map((e: { actionType: string }) => e.actionType)).toEqual(["UPLOAD", "UPLOAD", "VIEW"]);
+
+    // Tampering block 2 of v2 must pinpoint ONLY block 2 (not block 0 from v1).
+    const tamperedV2 = Buffer.from(v2);
+    tamperedV2[550 * 1024] ^= 0xff; // block 2
+    const td = await digestFile(ab(tamperedV2));
+    const verifyRes = (await (await verifyHashes(json({ ...td, documentId: docId }), {})).json()).data;
+    expect(verifyRes.state).toBe("unrecognized");
+    expect(verifyRes.closestMatch.tamperedBlocks.map((b: { index: number }) => b.index)).toEqual([2]);
   });
 });

@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
-import { calculateAuditHash, calculateGenesisHash } from "../crypto/hash-chain";
+import { calculateAuditHash, calculateGenesisHash, resolveGenesisFileHash } from "../crypto/hash-chain";
 import type { ActionType } from "../types";
 
 export async function appendAudit(
@@ -20,7 +20,8 @@ export async function appendAudit(
     });
 
     const seq = (last?.seq ?? 0) + 1;
-    const previousHash = last?.currentHash ?? calculateGenesisHash(documentId, doc.fileHash);
+    const genesisFileHash = resolveGenesisFileHash(doc.fileHash, doc.metadata);
+    const previousHash = last?.currentHash ?? calculateGenesisHash(documentId, genesisFileHash);
     const timestamp = new Date();
     const currentHash = calculateAuditHash(
       { seq, documentId, actorId, actionType, timestamp, payload },
